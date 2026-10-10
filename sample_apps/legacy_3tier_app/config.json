@@ -1,0 +1,81 @@
+{
+  "app_id": "app-fintech-portal-prod",
+  "app_name": "Enterprise Payment & Customer Portal",
+  "source_platform": "vmware_onprem_vcenter_6_7",
+  "resources": [
+    {
+      "id": "vm-web-01",
+      "name": "nginx-web-proxy-01",
+      "resource_type": "virtual_machine",
+      "os": "Ubuntu 22.04 LTS",
+      "cpu_cores": 2,
+      "ram_gb": 4.0,
+      "storage_gb": 40.0,
+      "ip_addresses": ["192.168.1.101"],
+      "open_ports": [80, 443],
+      "dependencies": ["vm-api-02"],
+      "is_stateful": false,
+      "data_volume_gb": 0.0,
+      "tags": {
+        "Tier": "WebFrontend",
+        "Environment": "LegacyProduction"
+      },
+      "metadata": {
+        "web_server": "nginx/1.22",
+        "ssl_cert": "Let's Encrypt Wildcard"
+      }
+    },
+    {
+      "id": "vm-api-02",
+      "name": "node-payment-api-02",
+      "resource_type": "virtual_machine",
+      "os": "Ubuntu 22.04 LTS",
+      "cpu_cores": 4,
+      "ram_gb": 8.0,
+      "storage_gb": 60.0,
+      "ip_addresses": ["192.168.1.102"],
+      "open_ports": [5000],
+      "dependencies": ["vm-db-03"],
+      "is_stateful": false,
+      "data_volume_gb": 0.0,
+      "tags": {
+        "Tier": "ApplicationAPI",
+        "Environment": "LegacyProduction"
+      },
+      "metadata": {
+        "runtime": "Node.js v18.17.0",
+        "framework": "Express + Prisma ORM",
+        "db_connection_uri": "postgres://meshadmin:SuperSecretLegacyDBPass2026!@192.168.1.104:5432/appdb"
+      }
+    },
+    {
+      "id": "vm-db-03",
+      "name": "postgres-database-03",
+      "resource_type": "database",
+      "os": "RedHat Enterprise Linux 8.8",
+      "cpu_cores": 8,
+      "ram_gb": 32.0,
+      "storage_gb": 500.0,
+      "ip_addresses": ["192.168.1.104"],
+      "open_ports": [5432],
+      "dependencies": [],
+      "is_stateful": true,
+      "data_volume_gb": 350.0,
+      "tags": {
+        "Tier": "StatefulDatabase",
+        "Environment": "LegacyProduction"
+      },
+      "metadata": {
+        "database_engine": "PostgreSQL 14.9",
+        "table_count": 42,
+        "total_rows": 1284500,
+        "replication_mode": "WAL Streaming Physical"
+      }
+    }
+  ],
+  "network_flows": [
+    { "from": "INTERNET", "to": "vm-web-01", "port": 443, "protocol": "TCP" },
+    { "from": "vm-web-01", "to": "vm-api-02", "port": 5000, "protocol": "TCP" },
+    { "from": "vm-api-02", "to": "vm-db-03", "port": 5432, "protocol": "TCP" }
+  ]
+}
