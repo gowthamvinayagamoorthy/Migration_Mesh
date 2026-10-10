@@ -1,0 +1,362 @@
+[
+  {
+    "id": "safe_01_tag_update",
+    "name": "In-place tag update on RDS cluster",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_rds_cluster.aurora_postgres",
+          "type": "aws_rds_cluster",
+          "change": {
+            "actions": ["update"],
+            "before": { "tags": { "Env": "staging" } },
+            "after": { "tags": { "Env": "production" } }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "safe_02_scale_ecs_service",
+    "name": "Scale ECS service desired count from 2 to 4",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_ecs_service.api_service",
+          "type": "aws_ecs_service",
+          "change": {
+            "actions": ["update"],
+            "before": { "desired_count": 2 },
+            "after": { "desired_count": 4 }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "safe_03_create_new_subnet",
+    "name": "Add a new private subnet",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_subnet.private_1c",
+          "type": "aws_subnet",
+          "change": {
+            "actions": ["create"],
+            "before": null,
+            "after": { "cidr_block": "10.100.30.0/24" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "safe_04_add_s3_bucket",
+    "name": "Provision a new S3 bucket for assets",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_s3_bucket.assets_bucket",
+          "type": "aws_s3_bucket",
+          "change": {
+            "actions": ["create"],
+            "before": null,
+            "after": { "bucket": "mesh-assets-2026" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "safe_05_update_container_image",
+    "name": "Update container image tag on ECS task definition",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_ecs_task_definition.api_task",
+          "type": "aws_ecs_task_definition",
+          "change": {
+            "actions": ["create"],
+            "before": null,
+            "after": { "family": "api-task-v2" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "safe_06_add_azure_app_replica",
+    "name": "Scale Azure Container App replica count",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "azurerm_container_app.api_app",
+          "type": "azurerm_container_app",
+          "change": {
+            "actions": ["update"],
+            "before": { "min_replicas": 1 },
+            "after": { "min_replicas": 3 }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "safe_07_enable_kms_key_rotation",
+    "name": "Enable automatic key rotation on KMS key",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_kms_key.db_kms_key",
+          "type": "aws_kms_key",
+          "change": {
+            "actions": ["update"],
+            "before": { "enable_key_rotation": false },
+            "after": { "enable_key_rotation": true }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "safe_08_add_security_group_rule",
+    "name": "Add secure private ingress rule to app security group",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_security_group.app_sg",
+          "type": "aws_security_group",
+          "change": {
+            "actions": ["update"],
+            "before": {},
+            "after": { "description": "Updated SG" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "safe_09_no_op_check",
+    "name": "No-op plan for unchanged infrastructure",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_vpc.mesh_vpc",
+          "type": "aws_vpc",
+          "change": {
+            "actions": ["no-op"],
+            "before": { "cidr_block": "10.100.0.0/16" },
+            "after": { "cidr_block": "10.100.0.0/16" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "safe_10_add_azure_subnet",
+    "name": "Add new Azure subnet for Redis cache",
+    "expected_verdict": "SAFE",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "azurerm_subnet.cache_subnet",
+          "type": "azurerm_subnet",
+          "change": {
+            "actions": ["create"],
+            "before": null,
+            "after": { "address_prefixes": ["10.200.3.0/24"] }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_01_destroy_aurora_cluster",
+    "name": "Destructive delete action on Aurora PostgreSQL cluster",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_rds_cluster.aurora_postgres",
+          "type": "aws_rds_cluster",
+          "change": {
+            "actions": ["delete"],
+            "before": { "cluster_identifier": "prod-aurora-db" },
+            "after": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_02_replace_azure_postgres",
+    "name": "Forced replacement (requires_new) on Azure PostgreSQL Flexible Server",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "azurerm_postgresql_flexible_server.postgres_server",
+          "type": "azurerm_postgresql_flexible_server",
+          "change": {
+            "actions": ["create", "delete"],
+            "before": { "name": "psql-flex-old" },
+            "after": { "name": "psql-flex-new" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_03_delete_s3_storage_bucket",
+    "name": "Destructive drop of stateful S3 bucket",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_s3_bucket.user_data",
+          "type": "aws_s3_bucket",
+          "change": {
+            "actions": ["delete"],
+            "before": { "bucket": "user-data-prod" },
+            "after": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_04_replace_dynamodb_table",
+    "name": "Forced replacement on DynamoDB customer ledger table",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_dynamodb_table.customer_ledger",
+          "type": "aws_dynamodb_table",
+          "change": {
+            "actions": ["delete", "create"],
+            "before": { "name": "customer_ledger" },
+            "after": { "name": "customer_ledger_v2" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_05_drop_kms_encryption_key",
+    "name": "Destructive deletion of master KMS encryption key",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_kms_key.db_kms_key",
+          "type": "aws_kms_key",
+          "change": {
+            "actions": ["delete"],
+            "before": { "description": "KMS master" },
+            "after": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_06_delete_ebs_volume",
+    "name": "Delete stateful EBS database volume",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_ebs_volume.db_data_vol",
+          "type": "aws_ebs_volume",
+          "change": {
+            "actions": ["delete"],
+            "before": { "size": 500 },
+            "after": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_07_replace_azure_storage_account",
+    "name": "Forced replacement of Azure Storage Account containing blob data",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "azurerm_storage_account.blob_store",
+          "type": "azurerm_storage_account",
+          "change": {
+            "actions": ["create", "delete"],
+            "before": { "name": "blobstoreprod" },
+            "after": { "name": "blobstoreprodv2" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_08_replace_rds_instance",
+    "name": "Forced replacement on standalone RDS PostgreSQL instance",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_db_instance.postgres_db",
+          "type": "aws_db_instance",
+          "change": {
+            "actions": ["delete", "create"],
+            "before": { "identifier": "postgres-prod" },
+            "after": { "identifier": "postgres-prod-new" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_09_replace_azure_keyvault",
+    "name": "Forced replacement on production Azure Key Vault",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "azurerm_key_vault.prod_vault",
+          "type": "azurerm_key_vault",
+          "change": {
+            "actions": ["create", "delete"],
+            "before": { "name": "kv-prod-mesh" },
+            "after": { "name": "kv-prod-mesh-v2" }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "fault_10_drop_efs_filesystem",
+    "name": "Destructive drop of shared EFS stateful file system",
+    "expected_verdict": "FAULTY",
+    "plan_data": {
+      "resource_changes": [
+        {
+          "address": "aws_efs_file_system.shared_storage",
+          "type": "aws_efs_file_system",
+          "change": {
+            "actions": ["delete"],
+            "before": { "creation_token": "efs-token-01" },
+            "after": null
+          }
+        }
+      ]
+    }
+  }
+]

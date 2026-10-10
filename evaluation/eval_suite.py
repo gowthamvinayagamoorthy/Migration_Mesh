@@ -1,216 +1,145 @@
 """
 MigrationMesh - Empirical Evaluation & Benchmark Suite
-Rigorous evaluation against human baseline on plan accuracy, hallucination rate,
-destructive-diff interception, and Net Engineering Time Saved.
+Evaluates deterministic gates on an independent, held-out dataset of 20 realistic Terraform Plan JSON cases.
+Reports True Positives, True Negatives, False Positives, False Negatives, Precision, Recall, and real elapsed timers.
 """
 
 import os
 import sys
+import json
 import time
 from typing import Dict, Any, List
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from packages.core.schemas import CloudProvider, IaCManifest
-from agents.supervisor.supervisor_agent import MigrationMeshSupervisor
-from agents.critic.critic_agent import CriticAgent
-from packages.policy_engine.evaluator import PolicyEngine
+from packages.core.destructive_gate import TerraformPlanDestructiveGate
+from packages.core.schema_validator import TerraformProviderSchemaValidator
+from packages.policy_engine.python_policy_checker import PythonPolicyChecker
+from packages.audit_ledger.hmac_hash_chain import HMACHashChain
 
 
-class MigrationMeshEvaluator:
+class MigrationMeshHonestEvaluator:
     """
-    Evaluator & Benchmark Harness:
-    Empirically benchmarks MigrationMesh across 25 synthetic enterprise workloads
-    with mutated security, hallucination, and destructive failure injections.
+    Honest Evaluation Harness:
+    Evaluates a held-out test suite of 20 independent Terraform plan cases
+    (10 Safe plans, 10 Faulty/Destructive plans).
     """
 
-    def __init__(self):
-        self.supervisor = MigrationMeshSupervisor()
-        self.critic = CriticAgent()
-        self.policy = PolicyEngine()
+    def __init__(self, dataset_path: Optional[str] = None):
+        self.dataset_path = dataset_path or os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "held_out_plans.json"
+        )
+        self.destructive_gate = TerraformPlanDestructiveGate()
+        self.schema_validator = TerraformProviderSchemaValidator()
+        self.policy_checker = PythonPolicyChecker()
 
-    def run_comprehensive_benchmark(self) -> Dict[str, Any]:
-        print("=" * 80)
-        print("STARTING MIGRATIONMESH BENCHMARK EVALUATION SUITE")
-        print("=" * 80)
+    def run_held_out_evaluation(self) -> Dict[str, Any]:
+        with open(self.dataset_path, "r") as f:
+            cases = json.load(f)
 
-        # Baseline human engineer metrics (hours)
-        human_baseline_hours_per_app = 40.0
+        total_cases = len(cases)
+        tp = 0  # Faulty plan correctly identified and blocked
+        tn = 0  # Safe plan correctly approved
+        fp = 0  # Safe plan erroneously blocked (false alarm)
+        fn = 0  # Faulty plan missed and allowed through
 
-        # Benchmark counters
-        total_eval_runs = 25
-        destructive_injected = 5
-        destructive_caught = 0
+        case_results = []
+        start_timer = time.perf_counter()
 
-        hallucinations_injected = 5
-        hallucinations_caught = 0
+        for case in cases:
+            case_id = case["id"]
+            case_name = case["name"]
+            expected = case["expected_verdict"]  # "SAFE" or "FAULTY"
+            plan_data = case["plan_data"]
 
-        policy_violations_injected = 5
-        policy_violations_caught = 0
+            t0 = time.perf_counter()
+            is_approved, violations = self.destructive_gate.evaluate_plan_json(plan_data)
+            elapsed_ms = round((time.perf_counter() - t0) * 1000, 3)
 
-        accurate_plans = 0
-        total_agent_runtime_sec = 0.0
+            actual = "SAFE" if is_approved else "FAULTY"
 
-        start_bench_time = time.time()
+            if expected == "FAULTY" and actual == "FAULTY":
+                tp += 1
+                classification = "TRUE_POSITIVE"
+            elif expected == "SAFE" and actual == "SAFE":
+                tn += 1
+                classification = "TRUE_NEGATIVE"
+            elif expected == "SAFE" and actual == "FAULTY":
+                fp += 1
+                classification = "FALSE_POSITIVE"
+            elif expected == "FAULTY" and actual == "SAFE":
+                fn += 1
+                classification = "FALSE_NEGATIVE"
 
-        # 1. Evaluate 10 Standard Multi-Tier Apps (AWS & Azure targets)
-        for i in range(10):
-            target = CloudProvider.AWS if i % 2 == 0 else CloudProvider.AZURE
-            sample_inv = {
-                "app_id": f"app-benchmark-suite-{i+1}",
-                "app_name": f"Enterprise Service Tier {i+1}",
-                "resources": [
-                    {
-                        "id": f"vm-web-{i+1}",
-                        "name": f"web-service-{i+1}",
-                        "resource_type": "virtual_machine",
-                        "cpu_cores": 2,
-                        "ram_gb": 4.0,
-                        "storage_gb": 40.0,
-                        "open_ports": [80, 443],
-                        "dependencies": [f"vm-api-{i+1}"],
-                        "is_stateful": False
-                    },
-                    {
-                        "id": f"vm-api-{i+1}",
-                        "name": f"api-service-{i+1}",
-                        "resource_type": "virtual_machine",
-                        "cpu_cores": 4,
-                        "ram_gb": 8.0,
-                        "storage_gb": 60.0,
-                        "open_ports": [5000],
-                        "dependencies": [f"vm-db-{i+1}"],
-                        "is_stateful": False
-                    },
-                    {
-                        "id": f"vm-db-{i+1}",
-                        "name": f"db-service-{i+1}",
-                        "resource_type": "database",
-                        "cpu_cores": 8,
-                        "ram_gb": 16.0,
-                        "storage_gb": 250.0,
-                        "open_ports": [5432],
-                        "dependencies": [],
-                        "is_stateful": True
-                    }
-                ]
-            }
+            case_results.append({
+                "id": case_id,
+                "name": case_name,
+                "expected": expected,
+                "actual": actual,
+                "classification": classification,
+                "latency_ms": elapsed_ms,
+                "violations_count": len(violations)
+            })
 
-            t0 = time.time()
-            res = self.supervisor.run_end_to_end_migration(sample_inv, selected_target=target)
-            t_run = time.time() - t0
-            total_agent_runtime_sec += t_run
+        total_eval_time_sec = time.perf_counter() - start_timer
+        avg_eval_time_ms = (total_eval_time_sec / total_cases) * 1000.0
 
-            if res["policy_result"]["passed"] and res["critic_verdict"]["approved"] and res["twin_receipt"]["parity_pass_percentage"] == 100.0:
-                accurate_plans += 1
+        # Compute Metrics
+        detection_rate_recall = (tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+        false_positive_rate = (fp / (fp + tn)) if (fp + tn) > 0 else 0.0
+        false_negative_rate = (fn / (tp + fn)) if (tp + fn) > 0 else 0.0
+        precision = (tp / (tp + fp)) if (tp + fp) > 0 else 0.0
+        accuracy = ((tp + tn) / total_cases) if total_cases > 0 else 0.0
 
-        # 2. Evaluate 5 Injected Destructive Diff Mutations
-        for i in range(destructive_injected):
-            mutated_manifest = IaCManifest(
-                provider=CloudProvider.AWS,
-                hcl_code=f"""
-                resource "aws_rds_cluster" "aurora_postgres" {{
-                  cluster_identifier = "mutated-db-{i}"
-                  # DESTROY: aws_rds_cluster.aurora_postgres
-                  # REPLACE: aws_rds_cluster.aurora_postgres
-                }}
-                """,
-                stateful_resources=["aws_rds_cluster.aurora_postgres"],
-                validation_status="valid"
-            )
-            verdict = self.critic.evaluate_plan(mutated_manifest)
-            if not verdict.approved and len(verdict.detected_destructive_changes) > 0:
-                destructive_caught += 1
-
-        # 3. Evaluate 5 Injected Hallucinated Resource Types
-        for i in range(hallucinations_injected):
-            mutated_manifest = IaCManifest(
-                provider=CloudProvider.AWS,
-                hcl_code=f"""
-                resource "aws_hallucinated_quantum_mesh_db" "fake_db_{i}" {{
-                  quantum_cores = 128
-                }}
-                resource "aws_non_existent_serverless_hypervisor" "fake_hyp_{i}" {{
-                  turbo_mode = true
-                }}
-                """,
-                stateful_resources=[],
-                validation_status="valid"
-            )
-            verdict = self.critic.evaluate_plan(mutated_manifest)
-            if not verdict.approved and len(verdict.detected_hallucinations) > 0:
-                hallucinations_caught += 1
-
-        # 4. Evaluate 5 Injected CIS Security Policy Violations
-        for i in range(policy_violations_injected):
-            mutated_manifest = IaCManifest(
-                provider=CloudProvider.AWS,
-                hcl_code=f"""
-                resource "aws_security_group" "bad_db_sg_{i}" {{
-                  name = "bad-sg"
-                  ingress {{
-                    from_port = 5432
-                    to_port = 5432
-                    protocol = "tcp"
-                    cidr_blocks = ["0.0.0.0/0"]
-                  }}
-                }}
-                resource "aws_iam_policy" "wildcard_iam_{i}" {{
-                  name = "bad-iam"
-                  policy = jsonencode({{
-                    Statement = [{{
-                      Action = "*"
-                      Resource = "*"
-                    }}]
-                  }})
-                }}
-                """,
-                stateful_resources=[],
-                validation_status="valid"
-            )
-            pol_result = self.policy.evaluate_manifest(mutated_manifest)
-            if not pol_result.passed and len(pol_result.violations) >= 2:
-                policy_violations_caught += 1
-
-        # Calculate Financial & Time Metrics
-        avg_agent_time_hours = (total_agent_runtime_sec / 10.0) / 3600.0  # ~0.0005 hr (1.8s)
-        human_review_time_hours = 0.5   # 30 mins
-        remediation_time_hours = 0.15   # 9 mins
-
-        net_time_saved_hours = human_baseline_hours_per_app - (avg_agent_time_hours + human_review_time_hours + remediation_time_hours)
-        net_time_saved_pct = round((net_time_saved_hours / human_baseline_hours_per_app) * 100.0, 1)
-
-        destructive_catch_rate = (destructive_caught / destructive_injected) * 100.0
-        hallucination_catch_rate = (hallucinations_caught / hallucinations_injected) * 100.0
-        policy_catch_rate = (policy_violations_caught / policy_violations_injected) * 100.0
-        plan_accuracy_rate = (accurate_plans / 10.0) * 100.0
-
-        results = {
-            "total_benchmark_workloads": total_eval_runs,
-            "plan_accuracy_percentage": plan_accuracy_rate,
-            "destructive_diff_interception_rate": destructive_catch_rate,
-            "hallucination_detection_rate": hallucination_catch_rate,
-            "policy_violation_catch_rate": policy_catch_rate,
-            "time_metrics": {
-                "human_baseline_hours_per_app": human_baseline_hours_per_app,
-                "agent_generation_time_seconds": round(total_agent_runtime_sec / 10.0, 2),
-                "human_review_time_hours": human_review_time_hours,
-                "remediation_time_hours": remediation_time_hours,
-                "net_time_saved_hours": round(net_time_saved_hours, 2),
-                "net_time_saved_percentage": net_time_saved_pct
+        summary = {
+            "evaluation_type": "HELD_OUT_INDEPENDENT_TEST_SET",
+            "test_set_size": total_cases,
+            "counts": {
+                "total_cases": total_cases,
+                "true_positives": tp,
+                "true_negatives": tn,
+                "false_positives": fp,
+                "false_negatives": fn
             },
-            "eval_duration_seconds": round(time.time() - start_bench_time, 2)
+            "metrics": {
+                "accuracy": f"{tp + tn}/{total_cases} ({round(accuracy * 100, 1)}%)",
+                "detection_rate_recall": f"{tp}/{tp + fn} ({round(detection_rate_recall * 100, 1)}%)",
+                "precision": f"{tp}/{tp + fp} ({round(precision * 100, 1)}%)",
+                "false_positive_rate": f"{fp}/{fp + tn} ({round(false_positive_rate * 100, 1)}%)",
+                "false_negative_rate": f"{fn}/{tp + fn} ({round(false_negative_rate * 100, 1)}%)"
+            },
+            "timing_measurements": {
+                "total_evaluation_elapsed_seconds": round(total_eval_time_sec, 4),
+                "average_plan_gate_latency_ms": round(avg_eval_time_ms, 3),
+                "measurement_method": "real timer (time.perf_counter)"
+            },
+            "human_baseline_comparison": {
+                "human_time_baseline": "Assumption, unmeasured (Estimated 40.0 hours for manual review & verification of a 3-tier architecture)",
+                "note": "Net engineering time savings are projected relative to estimated human baseline, not an empirically timed human cohort study."
+            },
+            "detailed_case_results": case_results
         }
 
-        print(f"Plan Accuracy: {plan_accuracy_rate}%")
-        print(f"Destructive Diff Interception Rate: {destructive_catch_rate}% (100% Target Met)")
-        print(f"Hallucination Detection Rate: {hallucination_catch_rate}% (100% Target Met)")
-        print(f"Net Engineer Time Saved: {net_time_saved_pct}%")
-        print("=" * 80)
+        self._print_summary_report(summary)
+        return summary
 
-        return results
+    def _print_summary_report(self, summary: Dict[str, Any]):
+        print("=" * 80)
+        print("MIGRATIONMESH HONEST EVALUATION REPORT (HELD-OUT DATASET)")
+        print("=" * 80)
+        print(f"Dataset Size: {summary['test_set_size']} independent test plans")
+        print(f"True Positives (Faulty blocked):   {summary['counts']['true_positives']}/10")
+        print(f"True Negatives (Safe allowed):     {summary['counts']['true_negatives']}/10")
+        print(f"False Positives (Safe blocked):    {summary['counts']['false_positives']}/10 (FPR: {summary['metrics']['false_positive_rate']})")
+        print(f"False Negatives (Faulty missed):   {summary['counts']['false_negatives']}/10 (FNR: {summary['metrics']['false_negative_rate']})")
+        print(f"Plan Gate Precision:              {summary['metrics']['precision']}")
+        print(f"Detection Rate (Recall):          {summary['metrics']['detection_rate_recall']}")
+        print(f"Avg Plan Gate Latency:            {summary['timing_measurements']['average_plan_gate_latency_ms']} ms (measured)")
+        print(f"Human Baseline Status:            {summary['human_baseline_comparison']['human_time_baseline']}")
+        print("=" * 80)
 
 
 if __name__ == "__main__":
-    evaluator = MigrationMeshEvaluator()
-    evaluator.run_comprehensive_benchmark()
+    evaluator = MigrationMeshHonestEvaluator()
+    evaluator.run_held_out_evaluation()
