@@ -1,0 +1,26 @@
+{
+  "scenario": "run_01_standard_workload",
+  "model_used": "llama3.2:latest",
+  "redacted_prompt_sent_to_llm": "Analyze architecture for migration:\n{\n  \"app_id\": \"app-fintech-portal-prod\",\n  \"app_name\": \"Enterprise Payment & Customer Portal\",\n  \"source_platform\": \"vmware_onprem_vcenter_6_7\",\n  \"resources\": [\n    {\n      \"id\": \"vm-web-01\",\n      \"name\": \"nginx-web-proxy-01\",\n      \"resource_type\": \"virtual_machine\",\n      \"os\": \"Ubuntu 22.04 LTS\",\n      \"cpu_cores\": 2,\n      \"ram_gb\": 4.0,\n      \"storage_gb\": 40.0,\n      \"ip_addresses\": [\n        \"<IP_NODE_5f5b76>\"\n      ],\n      \"tags\": {\n        \"Tier\": \"WebFrontend\",\n        \"Environment\": \"LegacyProduction\"\n      },\n      \"open_ports\": [\n        80,\n        443\n      ],\n      \"dependencies\": [\n        \"vm-api-02\"\n      ],\n      \"is_stateful\": false,\n      \"data_volume_gb\": 0.0,\n      \"metadata\": {\n        \"web_server\": \"nginx/1.22\",\n        \"ssl_cert\": \"Let's Encrypt Wildcard\"\n      }\n    },\n    {\n      \"id\": \"vm-api-02\",\n      \"name\": \"node-payment-api-02\",\n      \"resource_type\": \"virtual_machine\",\n      \"os\": \"Ubuntu 22.04 LTS\",\n      \"cpu_cores\": 4,\n      \"ram_gb\": 8.0,\n      \"storage_gb\": 60.0,\n      \"ip_addresses\": [\n        \"<IP_NODE_d7bd3f>\"\n      ],\n      \"tags\": {\n        \"Tier\": \"ApplicationAPI\",\n        \"Environment\": \"LegacyProduction\"\n      },\n      \"open_ports\": [\n        5000\n      ],\n      \"dependencies\": [\n        \"vm-db-03\"\n      ],\n      \"is_stateful\": false,\n      \"data_volume_gb\": 0.0,\n      \"metadata\": {\n        \"runtime\": \"Node.js v18.17.0\",\n        \"framework\": \"Express + Prisma ORM\",\n        \"db_connection_uri\": \"postgres://meshadmin:<DB_PASSWD_415061>@<DB_HOST_f9b60c>:5432/appdb\"\n      }\n    },\n    {\n      \"id\": \"vm-db-03\",\n      \"name\": \"postgres-database-03\",\n      \"resource_type\": \"database\",\n      \"os\": \"RedHat Enterprise Linux 8.8\",\n      \"cpu_cores\": 8,\n      \"ram_gb\": 32.0,\n      \"storage_gb\": 500.0,\n      \"ip_addresses\": [\n        \"<DB_HOST_f9b60c>\"\n      ],\n      \"tags\": {\n        \"Tier\": \"StatefulDatabase\",\n        \"Environment\": \"LegacyProduction\"\n      },\n      \"open_ports\": [\n        5432\n      ],\n      \"dependencies\": [],\n      \"is_stateful\": true,\n      \"data_volume_gb\": 350.0,\n      \"metadata\": {\n        \"database_engine\": \"PostgreSQL 14.9\",\n        \"table_count\": 42,\n        \"total_rows\": 1284500,\n        \"replication_mode\": \"WAL Streaming Physical\"\n      }\n    }\n  ],\n  \"network_flows\": [\n    {\n      \"from\": \"INTERNET\",\n      \"to\": \"vm-web-01\",\n      \"port\": 443,\n      \"protocol\": \"TCP\"\n    },\n    {\n      \"from\": \"vm-web-01\",\n      \"to\": \"vm-api-02\",\n      \"port\": 5000,\n      \"protocol\": \"TCP\"\n    },\n    {\n      \"from\": \"vm-api-02\",\n      \"to\": \"vm-db-03\",\n      \"port\": 5432,\n      \"protocol\": \"TCP\"\n    }\n  ],\n  \"created_at\": \"2026-10-10T05:38:36.434835+00:00\"\n}",
+  "raw_model_output": "Based on the provided migration inventory, the migration to a new platform poses risks related to the potential disruption of external services and potential security vulnerabilities, given the legacy systems and outdated technologies. The legacy systems, such as VMware vCenter 6.7, outdated databases, and potential for open ports to be exploited, may not be secure or up-to-date, which could lead to issues during the migration process.",
+  "destructive_gate_approved": true,
+  "gate_violations": [],
+  "audit_block": {
+    "block_index": 1,
+    "timestamp": "2026-10-10T05:38:41.322373+00:00",
+    "action_type": "REAL_LLM_EVALUATION",
+    "agent_name": "StrategyLLMAgent",
+    "actor_id": "OLLAMA_LLAMA3_2",
+    "input_digest": "5f68841a6af0252c2ac96f52aa9a9d56450fca4c4b98dac85d4a6efd877bad8c",
+    "output_digest": "ca35d9dc39bd90be31f4267ae9e46c7b21d20443adeb1e71b4bd72cce7d8e902",
+    "policy_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "critic_digest": "0000000000000000000000000000000000000000000000000000000000000000",
+    "previous_block_hash": "484808dffa34ae57f62da2c1b149eef4c900b3dd3a83a3df36ac88a43685e64c",
+    "block_hash": "61d063ed9a4b5956eda4710e0dbc1772c5ff8ad3a59672c361962f482255fe33",
+    "signature": "4ff67d5e6e7006d7c1ace20e815676aa4bb0c7b752b5c8a9ce40fd9c75220669",
+    "metadata": {
+      "gate_approved": true,
+      "violations": 0
+    }
+  }
+}

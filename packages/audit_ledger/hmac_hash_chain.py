@@ -210,3 +210,80 @@ class HMACHashChain:
             "chain_tip_signature": self.chain[-1].signature,
             "verified_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
+
+    def export_head_anchor(self) -> Dict[str, Any]:
+        """
+        Exports an external anchor for the current tip of the hash chain.
+        This anchor can be stored in an external immutable witness/store to detect truncation attacks.
+        """
+        tip = self.chain[-1]
+        return {
+            "head_sequence_number": tip.block_index,
+            "head_hash": tip.block_hash,
+            "head_signature": tip.signature,
+            "anchored_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+
+    def verify_chain_with_anchor(self, anchor: Dict[str, Any], verification_key: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Cryptographically verifies the ledger against an external head anchor.
+        Detects if trailing blocks have been removed (truncation attacks) or altered (forking).
+        """
+        # First verify intrinsic integrity
+        base_verification = self.verify_chain_integrity(verification_key)
+        if not base_verification["valid"]:
+            return base_verification
+
+        anchor_seq = anchor.get("head_sequence_number")
+        anchor_hash = anchor.get("head_hash")
+        anchor_sig = anchor.get("head_signature")
+
+        if anchor_seq is None or not anchor_hash:
+            return {
+                "valid": False,
+                "error": "Invalid external anchor structure: missing head_sequence_number or head_hash"
+            }
+
+        # 1. Truncation detection: local chain has fewer blocks than the anchored state
+        if len(self.chain) <= anchor_seq:
+            return {
+                "valid": False,
+                "tamper_type": "TRUNCATION_ATTACK",
+                "reason": (
+                    f"Ledger truncation detected! External anchor expects at least {anchor_seq + 1} blocks "
+                    f"(sequence index {anchor_seq}), but local ledger only contains {len(self.chain)} blocks."
+                ),
+                "expected_sequence": anchor_seq,
+                "actual_count": len(self.chain)
+            }
+
+        # 2. Historical block mismatch at the anchored sequence
+        anchored_block = self.chain[anchor_seq]
+        if anchored_block.block_hash != anchor_hash:
+            return {
+                "valid": False,
+                "tamper_type": "ANCHOR_HASH_MISMATCH",
+                "reason": (
+                    f"External anchor hash mismatch at block index {anchor_seq}! "
+                    f"Expected {anchor_hash}, found {anchored_block.block_hash}."
+                ),
+                "expected_hash": anchor_hash,
+                "actual_hash": anchored_block.block_hash
+            }
+
+        if anchor_sig and anchored_block.signature != anchor_sig:
+            return {
+                "valid": False,
+                "tamper_type": "ANCHOR_SIGNATURE_MISMATCH",
+                "reason": f"External anchor signature mismatch at block index {anchor_seq}."
+            }
+
+        return {
+            "valid": True,
+            "anchor_verified": True,
+            "anchored_sequence": anchor_seq,
+            "anchored_hash": anchor_hash,
+            "current_total_blocks": len(self.chain),
+            "verified_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
+

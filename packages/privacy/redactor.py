@@ -25,6 +25,13 @@ class PrivacyRedactor:
         self.reverse_vault: Dict[str, str] = {}  # token -> original
 
         self.aws_key_pattern = re.compile(r'\b(AKIA[0-9A-Z]{16})\b')
+        self.github_token_pattern = re.compile(r'\b(gh[pousr]_[A-Za-z0-9_]{36,255})\b')
+        self.slack_webhook_pattern = re.compile(r'https:\/\/hooks\.slack\.com\/services\/T[a-zA-Z0-9_]+\/B[a-zA-Z0-9_]+\/[a-zA-Z0-9_]+')
+        self.stripe_key_pattern = re.compile(r'\b(sk_live_[0-9a-zA-Z]{24,99})\b')
+        self.private_key_pattern = re.compile(
+            r'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]+?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'
+        )
+        self.jwt_pattern = re.compile(r'\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b')
         self.connection_string_pattern = re.compile(
             r'(?:postgres|postgresql|mysql|mongodb|redis|sqlserver):\/\/[^:]+:([^@]+)@([^:\/]+):(\d+)\/(\w+)',
             re.IGNORECASE
@@ -54,15 +61,43 @@ class PrivacyRedactor:
         redacted = text
         redaction_count = 0
 
-        # 1. AWS Access Keys
-        for match in self.aws_key_pattern.finditer(text):
+        # 1. Private Key Blocks (RSA / OpenSSH / DSA / EC)
+        for match in self.private_key_pattern.finditer(redacted):
+            val = match.group(0)
+            tok = self._get_or_create_token("PRIVATE_KEY", val)
+            redacted = redacted.replace(val, tok)
+            redaction_count += 1
+
+        # 2. Slack Webhooks
+        for match in self.slack_webhook_pattern.finditer(redacted):
+            val = match.group(0)
+            tok = self._get_or_create_token("SLACK_WEBHOOK", val)
+            redacted = redacted.replace(val, tok)
+            redaction_count += 1
+
+        # 3. GitHub Personal Access Tokens (ghp_..., gho_..., etc.)
+        for match in self.github_token_pattern.finditer(redacted):
+            val = match.group(1)
+            tok = self._get_or_create_token("GITHUB_TOKEN", val)
+            redacted = redacted.replace(val, tok)
+            redaction_count += 1
+
+        # 4. Stripe API Keys (sk_live_...)
+        for match in self.stripe_key_pattern.finditer(redacted):
+            val = match.group(1)
+            tok = self._get_or_create_token("STRIPE_KEY", val)
+            redacted = redacted.replace(val, tok)
+            redaction_count += 1
+
+        # 5. AWS Access Keys
+        for match in self.aws_key_pattern.finditer(redacted):
             val = match.group(1)
             tok = self._get_or_create_token("AWS_KEY", val)
             redacted = redacted.replace(val, tok)
             redaction_count += 1
 
-        # 2. Connection Strings (Redact passwords and internal hosts)
-        for match in self.connection_string_pattern.finditer(text):
+        # 6. Connection Strings (Redact passwords and internal hosts)
+        for match in self.connection_string_pattern.finditer(redacted):
             pwd = match.group(1)
             host = match.group(2)
             pwd_tok = self._get_or_create_token("DB_PASSWD", pwd)
@@ -71,7 +106,15 @@ class PrivacyRedactor:
             redacted = redacted.replace(host, host_tok)
             redaction_count += 2
 
-        # 3. IPv6 Addresses via ipaddress validation
+        # 7. JWT Tokens
+        for match in self.jwt_pattern.finditer(redacted):
+            val = match.group(0)
+            if not val.startswith("<") and not val.endswith(">"):
+                tok = self._get_or_create_token("JWT_TOKEN", val)
+                redacted = redacted.replace(val, tok)
+                redaction_count += 1
+
+        # 8. IPv6 Addresses via ipaddress validation
         for candidate in set(re.findall(r'[\w:]+', redacted)):
             if ":" in candidate and len(candidate) >= 4 and not candidate.startswith("<"):
                 try:
@@ -83,7 +126,7 @@ class PrivacyRedactor:
                 except ValueError:
                     pass
 
-        # 4. High-Entropy Base64 / JWT tokens (Run before generic keyword matching)
+        # 9. High-Entropy Base64 / Secret tokens (Run before generic keyword matching)
         for match in self.base64_secret_pattern.finditer(redacted):
             val = match.group(0)
             if not val.startswith("<") and not val.endswith(">"):
@@ -91,7 +134,7 @@ class PrivacyRedactor:
                 redacted = redacted.replace(val, tok)
                 redaction_count += 1
 
-        # 5. Explicit Secret/Password key-values
+        # 10. Explicit Secret/Password key-values
         for match in self.secret_pattern.finditer(redacted):
             val = match.group(1)
             if val.startswith("<") and val.endswith(">"):
@@ -100,7 +143,7 @@ class PrivacyRedactor:
             redacted = redacted.replace(val, tok)
             redaction_count += 1
 
-        # 6. IPv4 Addresses
+        # 11. IPv4 Addresses
         for match in self.ipv4_pattern.finditer(redacted):
             val = match.group(0)
             if not val.startswith("<"):

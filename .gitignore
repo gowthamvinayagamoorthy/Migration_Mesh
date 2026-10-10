@@ -39,3 +39,12 @@ yarn-error.log*
 # OS
 .DS_Store
 Thumbs.db
+
+# Binaries & Terraform Scratch Cache
+bin/
+evaluation/real_plans_src/
+**/.terraform/
+**/.terraform.lock.hcl
+*.tfplan
+*.tfstate
+*.tfstate.backup
